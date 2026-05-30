@@ -71,8 +71,8 @@ class GamingEventDetector:
                         "confidence": weight
                     })
 
-        except Exception as e:
-            logger.error(f"OCR failed: {e}")
+        except (RuntimeError, ValueError) as e:
+            logger.warning(f"OCR failed: {e}")
 
         # =====================================
         # 2. VISUAL GAME SIGNALS
@@ -119,8 +119,8 @@ class GamingEventDetector:
                     "confidence": 0.2
                 })
 
-        except Exception as e:
-            logger.error(f"Visual detection failed: {e}")
+        except (cv2.error, ValueError) as e:
+            logger.warning(f"Visual detection failed: {e}")
 
         return {
             "frame_score": min(score, 1.0),
