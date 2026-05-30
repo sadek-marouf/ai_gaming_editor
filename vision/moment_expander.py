@@ -69,6 +69,14 @@ class MomentExpander:
                     end + extra
                 )
 
+                remaining = (
+                    self.min_duration -
+                    (end - start)
+                )
+
+                if remaining > 0:
+                    start = max(0, start - remaining)
+
             expanded.append({
 
                 "start_frame": start,
