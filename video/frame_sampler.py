@@ -22,7 +22,7 @@ class FrameSampler:
 
         frames = {}
 
-        for sec in range(int(duration)):
+        for sec in range(0, int(duration), step):
 
             cap.set(cv2.CAP_PROP_POS_FRAMES, int(sec * fps))
             ret, frame = cap.read()

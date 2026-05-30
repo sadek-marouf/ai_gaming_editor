@@ -12,6 +12,9 @@ class MotionDetector:
     def __init__(self):
         self.prev_frame = None
 
+    def reset(self):
+        self.prev_frame = None
+
     def compute_motion(self, frame):
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

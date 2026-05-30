@@ -1,5 +1,7 @@
 # video/video_loader.py
 
+import math
+
 import cv2
 import os
 from core.logger import get_logger
@@ -21,7 +23,8 @@ class VideoLoader:
         if not self.cap.isOpened():
             raise RuntimeError("Failed to open video")
 
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
+        raw_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.fps = raw_fps if raw_fps and not math.isnan(raw_fps) else 30
         self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -33,7 +36,15 @@ class VideoLoader:
         logger.info(f"FPS: {self.fps}, Duration: {self.duration:.2f}s")
 
     def release(self):
-        self.cap.release()
+        if self.cap:
+            self.cap.release()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+        return False
 
     def get_properties(self):
         return {

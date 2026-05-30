@@ -111,6 +111,8 @@ class WindowDeduplicator:
         )
 
         if smaller <= 0:
+            if a_duration == 0 and b_duration == 0:
+                return 1.0 if a["start_frame"] == b["start_frame"] else 0.0
             return 0.0
 
         return intersection / smaller
