@@ -11,9 +11,8 @@ logger = get_logger("AUDIO_ENGINE")
 
 class AudioEngine:
 
-    def __init__(self, video_loader):
+    def __init__(self):
 
-        self.video_loader = video_loader
         self.audio_path = None
 
         self.audio = None
@@ -67,7 +66,7 @@ class AudioEngine:
             energies.append(energy)
 
         # normalize
-        mx = max(energies) if energies else 1
+        mx = max(energies) if energies and max(energies) > 0 else 1
         energies = [e / mx for e in energies]
 
         self.energy_cache = energies

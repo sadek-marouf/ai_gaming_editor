@@ -1,5 +1,7 @@
 # vision/gaming_detector.py
 
+import re
+
 import cv2
 import numpy as np
 import easyocr
@@ -19,19 +21,20 @@ class GamingEventDetector:
         )
 
         # كلمات الأحداث المهمة داخل الألعاب (Game Events)
-        self.keywords = {
-            "kill": 1.0,
-            "killed": 1.0,
-            "eliminated": 1.0,
-            "headshot": 1.2,
-            "double kill": 1.3,
-            "triple kill": 1.5,
-            "quadra": 1.7,
-            "ace": 2.0,
-            "knocked": 0.9,
-            "victory": 1.8,
-            "winner": 1.6
-        }
+        # sorted longest-first to avoid substring conflicts
+        self.keywords = [
+            ("triple kill", 1.5),
+            ("double kill", 1.3),
+            ("eliminated", 1.0),
+            ("headshot", 1.2),
+            ("victory", 1.8),
+            ("knocked", 0.9),
+            ("killed", 1.0),
+            ("winner", 1.6),
+            ("quadra", 1.7),
+            ("kill", 1.0),
+            ("ace", 2.0),
+        ]
 
     def detect_frame_events(self, frame):
 
@@ -43,6 +46,8 @@ class GamingEventDetector:
         score = 0.0
         events = []
 
+        h, w = frame.shape[:2]
+
         # =====================================
         # 1. OCR TEXT DETECTION
         # =====================================
@@ -50,8 +55,6 @@ class GamingEventDetector:
         try:
 
             # نركز على أعلى الشاشة (Kill feed غالبًا)
-            h, w = frame.shape[:2]
-
             roi = frame[0:int(h * 0.35), :]
 
             results = self.reader.readtext(
@@ -61,10 +64,10 @@ class GamingEventDetector:
 
             text = " ".join(results).lower()
 
-            # تحليل الكلمات
-            for key, weight in self.keywords.items():
+            # تحليل الكلمات (word-boundary matching)
+            for key, weight in self.keywords:
 
-                if key in text:
+                if re.search(r'\b' + re.escape(key) + r'\b', text):
                     score += weight
                     events.append({
                         "type": key,
@@ -123,7 +126,7 @@ class GamingEventDetector:
             logger.error(f"Visual detection failed: {e}")
 
         return {
-            "frame_score": min(score, 1.0),
+            "frame_score": round(score, 4),
             "events": events
         }
 
@@ -144,7 +147,7 @@ class GamingEventDetector:
 
                 results.append({
                     "frame": frame_id,
-                    "score": result["frame_score"],
+                    "strength": result["frame_score"],
                     "events": result["events"]
                 })
 
