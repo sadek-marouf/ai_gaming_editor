@@ -1,8 +1,10 @@
 # audio/audio_engine.py
 
+import math
+
 import librosa
 import numpy as np
-import math
+
 from core.logger import get_logger
 from core.config import Config
 
@@ -12,12 +14,9 @@ logger = get_logger("AUDIO_ENGINE")
 class AudioEngine:
 
     def __init__(self):
-
         self.audio_path = None
-
         self.audio = None
         self.sr = None
-
         self.energy_cache = None
         self.beats_cache = None
 
@@ -26,14 +25,11 @@ class AudioEngine:
     # =====================================================
 
     def load_audio(self, audio_path):
-
         self.audio_path = audio_path
-
         self.audio, self.sr = librosa.load(
             audio_path,
-            sr=Config.AUDIO_SAMPLE_RATE
+            sr=Config.AUDIO_SAMPLE_RATE,
         )
-
         logger.info("Audio loaded successfully")
 
     # =====================================================
@@ -41,7 +37,6 @@ class AudioEngine:
     # =====================================================
 
     def compute_energy(self):
-
         if self.audio is None:
             raise RuntimeError("Audio not loaded")
 
@@ -52,10 +47,8 @@ class AudioEngine:
         energies = []
 
         for sec in range(duration):
-
             start = sec * self.sr
             end = min((sec + 1) * self.sr, len(self.audio))
-
             chunk = self.audio[start:end]
 
             if len(chunk) == 0:
@@ -65,14 +58,11 @@ class AudioEngine:
             energy = float(np.mean(chunk ** 2))
             energies.append(energy)
 
-        # normalize
         mx = max(energies) if energies and max(energies) > 0 else 1
         energies = [e / mx for e in energies]
 
         self.energy_cache = energies
-
         logger.info(f"Energy computed: {len(energies)} segments")
-
         return energies
 
     # =====================================================
@@ -80,26 +70,22 @@ class AudioEngine:
     # =====================================================
 
     def detect_beats(self):
-
         if self.audio is None:
             raise RuntimeError("Audio not loaded")
 
         tempo, beat_frames = librosa.beat.beat_track(
             y=self.audio,
-            sr=self.sr
+            sr=self.sr,
         )
 
         beat_times = librosa.frames_to_time(
             beat_frames,
-            sr=self.sr
+            sr=self.sr,
         )
 
         beats = [round(float(t), 2) for t in beat_times]
-
         self.beats_cache = beats
-
         logger.info(f"Detected {len(beats)} beats")
-
         return beats
 
     # =====================================================
@@ -107,7 +93,6 @@ class AudioEngine:
     # =====================================================
 
     def detect_silence(self, threshold=0.01):
-
         if self.audio is None:
             raise RuntimeError("Audio not loaded")
 
@@ -118,10 +103,8 @@ class AudioEngine:
         silence_map = []
 
         for sec in range(duration):
-
             start = sec * self.sr
             end = min((sec + 1) * self.sr, len(self.audio))
-
             chunk = self.audio[start:end]
 
             if len(chunk) == 0:
@@ -129,19 +112,42 @@ class AudioEngine:
                 continue
 
             rms = np.sqrt(np.mean(chunk ** 2))
-
             silence_map.append(1.0 if rms < threshold else 0.0)
 
         logger.info("Silence map computed")
-
         return silence_map
 
     # =====================================================
-    # COMBINED AUDIO SCORE
+    # SILENCE PENALTY (for segment scoring)
+    # =====================================================
+
+    def silence_penalty(self, start_sec, end_sec):
+        if self.audio is None:
+            return 1.0
+
+        s = int(start_sec * self.sr)
+        e = int(end_sec * self.sr)
+        segment = self.audio[s:e]
+
+        if len(segment) == 0:
+            return 1.0
+
+        rms = librosa.feature.rms(y=segment)[0]
+        energy = float(np.mean(rms))
+
+        if energy < Config.SILENCE_RMS_LOW:
+            return Config.SILENCE_PENALTY_HEAVY
+
+        if energy < Config.SILENCE_RMS_MED:
+            return Config.SILENCE_PENALTY_LIGHT
+
+        return 1.0
+
+    # =====================================================
+    # COMBINED AUDIO PROFILE
     # =====================================================
 
     def get_audio_profile(self):
-
         if self.energy_cache is None:
             self.compute_energy()
 
