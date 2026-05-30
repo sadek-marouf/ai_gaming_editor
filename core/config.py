@@ -2,6 +2,7 @@
 
 import os
 
+
 class Config:
 
     # =========================
@@ -15,7 +16,7 @@ class Config:
     # =========================
     # VIDEO SETTINGS
     # =========================
-    FPS_SAMPLE_RATE = 1  # كل كم ثانية نأخذ frame
+    FPS_SAMPLE_RATE = 1
     TARGET_WIDTH = 720
     TARGET_HEIGHT = 1280
 
@@ -34,6 +35,8 @@ class Config:
     # AUDIO
     # =========================
     AUDIO_SAMPLE_RATE = 16000
+    AUDIO_CODEC = "pcm_s16le"
+    AUDIO_CHANNELS = 1
 
     # =========================
     # GAMING THRESHOLDS
@@ -41,8 +44,63 @@ class Config:
     MOTION_THRESHOLD = 0.6
     AUDIO_HYPE_THRESHOLD = 0.7
     VISUAL_FLASH_THRESHOLD = 0.5
+    COMBINED_PEAK_THRESHOLD = 0.75
+
+    # =========================
+    # SILENCE DETECTION
+    # =========================
+    SILENCE_RMS_LOW = 0.005
+    SILENCE_RMS_MED = 0.01
+    SILENCE_PENALTY_HEAVY = 0.2
+    SILENCE_PENALTY_LIGHT = 0.5
+
+    # =========================
+    # SCENE DETECTION
+    # =========================
+    SCENE_THRESHOLD = 27.0
+
+    # =========================
+    # SUBTITLE
+    # =========================
+    SUBTITLE_WORDS_PER_CHUNK = 3
+    SUBTITLE_FONT = "DejaVu Sans"
+    SUBTITLE_FONTSIZE = 20
+    SUBTITLE_MARGIN_V = 60
 
     # =========================
     # AI SETTINGS
     # =========================
     USE_AI = False
+    AI_MODEL = "llama-3.1-8b-instant"
+    AI_BASE_URL = "https://api.groq.com/openai/v1"
+
+    # =========================
+    # GAMING PROFILE
+    # =========================
+    GAMING_PROFILE = {
+        "audio_weight": 0.30,
+        "motion_weight": 0.35,
+        "visual_weight": 0.08,
+        "face_weight": 0.02,
+        "hook_weight": 0.10,
+        "ai_weight": 0.10,
+        "hype_weight": 0.25,
+        "min_duration": 3.5,
+        "max_duration": 8,
+        "fast_cuts": True,
+        "aggressive_subtitles": True,
+        "prefer_peaks": True,
+    }
+
+    # =========================
+    # PARALLEL PROCESSING
+    # =========================
+    PARALLEL_WORKERS = 4
+    CLIP_ENCODING_WORKERS = 2
+
+    # =========================
+    # REEL
+    # =========================
+    MAX_REEL_CLIPS = 4
+    BREATHING_ROOM = 0.6
+    MIN_CLIP_DURATION = 3.0
