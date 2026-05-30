@@ -41,7 +41,7 @@ class MotionEventDetector:
 
             window = motion_scores[
                 i - self.window_size:
-                i + self.window_size
+                i
             ]
 
             mean = np.mean(window)
