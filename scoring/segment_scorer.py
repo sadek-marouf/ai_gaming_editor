@@ -12,11 +12,15 @@ logger = get_logger("SEGMENT_SCORER")
 
 class SegmentScorer:
 
-    def __init__(self, audio_engine, cache_dir=None):
+    def __init__(self, audio_engine, game_profile=None, cache_dir=None):
         self.audio_engine = audio_engine
         self.hype_detector = HypeDetector()
         self.ai_scorer = AIScorer(cache_dir=cache_dir)
-        self.profile = Config.GAMING_PROFILE
+
+        if game_profile:
+            self.profile = game_profile.get_scoring_weights()
+        else:
+            self.profile = Config.GAMING_PROFILE
 
     def score_segments(
         self,
@@ -27,6 +31,9 @@ class SegmentScorer:
         face_scores,
         scene_changes,
         gaming_peaks,
+        kill_feed_scores=None,
+        hitmarker_scores=None,
+        vehicle_penalties=None,
     ):
         results = []
 
@@ -45,6 +52,20 @@ class SegmentScorer:
             m = self._safe_mean(motion_scores, s, e)
             v = self._safe_mean(visual_scores, s, e)
             f = self._safe_mean(face_scores, s, e) if face_scores else 0.0
+
+            # =========================================
+            # KILL FEED SCORE
+            # =========================================
+            kf = 0.0
+            if kill_feed_scores:
+                kf = self._safe_max(kill_feed_scores, s, e)
+
+            # =========================================
+            # HITMARKER SCORE
+            # =========================================
+            hm = 0.0
+            if hitmarker_scores:
+                hm = self._safe_max(hitmarker_scores, s, e)
 
             # =========================================
             # TEXT-BASED SCORES
@@ -81,8 +102,33 @@ class SegmentScorer:
                     )
 
             # =========================================
+            # KILL FEED INSTANT BOOST
+            # If kill feed detected, this segment is combat
+            # =========================================
+            kill_boost = 0.0
+            if kf > 0:
+                kill_boost = min(kf * 0.5, 1.0)
+
+            # =========================================
+            # HITMARKER BOOST
+            # =========================================
+            hitmarker_boost = 0.0
+            if hm > 0.5:
+                hitmarker_boost = hm * 0.3
+
+            # =========================================
+            # VEHICLE PENALTY
+            # =========================================
+            vehicle_mult = 1.0
+            if vehicle_penalties:
+                vp = self._safe_mean(vehicle_penalties, s, e)
+                vehicle_mult = max(vp, 0.0)
+
+            # =========================================
             # FINAL SCORE
             # =========================================
+            kf_weight = self.profile.get("kill_feed_weight", 0.0)
+
             score = (
                 (a * self.profile["audio_weight"])
                 + (m * self.profile["motion_weight"])
@@ -91,10 +137,16 @@ class SegmentScorer:
                 + (h * self.profile["hook_weight"])
                 + (ai * self.profile["ai_weight"])
                 + (gaming_hype * self.profile["hype_weight"])
+                + (kf * kf_weight)
                 + (silence_penalty * 0.05)
                 + scene_bonus
                 + peak_bonus
+                + kill_boost
+                + hitmarker_boost
             )
+
+            # Apply vehicle penalty multiplier
+            score *= vehicle_mult
 
             results.append({
                 "start": seg["start"],
@@ -108,6 +160,9 @@ class SegmentScorer:
                 "hook": round(h, 3),
                 "ai": round(ai, 3),
                 "hype": round(gaming_hype, 3),
+                "kill_feed": round(kf, 3),
+                "hitmarker": round(hm, 3),
+                "vehicle_penalty": round(vehicle_mult, 3),
             })
 
         results.sort(key=lambda x: x["score"], reverse=True)
@@ -124,5 +179,17 @@ class SegmentScorer:
             return 0.0
         try:
             return float(np.mean(scores[safe_s:safe_e]))
+        except Exception:
+            return 0.0
+
+    def _safe_max(self, scores, s, e):
+        if not scores:
+            return 0.0
+        safe_s = min(s, len(scores))
+        safe_e = min(e, len(scores))
+        if safe_s >= safe_e:
+            return 0.0
+        try:
+            return float(np.max(scores[safe_s:safe_e]))
         except Exception:
             return 0.0
