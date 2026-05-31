@@ -2,6 +2,8 @@
 
 import os
 
+import cv2
+
 from core.logger import get_logger
 from core.config import Config
 from core.utils import run_cmd, get_best_codec
@@ -11,14 +13,30 @@ logger = get_logger("FFMPEG")
 
 class FFmpegManager:
 
-    def __init__(self, video_path, output_dir, quality=None, use_gpu=False):
+    def __init__(
+        self, video_path, output_dir,
+        quality=None, use_gpu=False, auto_framer=None,
+    ):
         self.video_path = os.path.abspath(video_path)
         self.output_dir = os.path.abspath(output_dir)
         self.quality = quality or Config.DEFAULT_QUALITY
         self.use_gpu = use_gpu
         self.codec = get_best_codec(use_gpu)
+        self.auto_framer = auto_framer
+        self._input_size = None
 
         os.makedirs(self.output_dir, exist_ok=True)
+
+    def _get_input_size(self):
+        if self._input_size is not None:
+            return self._input_size
+
+        cap = cv2.VideoCapture(self.video_path)
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        self._input_size = (w, h)
+        return self._input_size
 
     def extract_audio(self, audio_path):
         cmd = [
@@ -36,28 +54,33 @@ class FFmpegManager:
     def cut_clip(self, start, duration, output_path, subtitle_path=None):
         bitrate = Config.QUALITY_PRESETS.get(self.quality, "5000k")
 
-        vf = (
-            f"scale={Config.TARGET_WIDTH}:{Config.TARGET_HEIGHT}:"
-            "force_original_aspect_ratio=decrease,"
-            f"pad={Config.TARGET_WIDTH}:{Config.TARGET_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
-        )
-
-        if subtitle_path:
-            sub_fixed = subtitle_path.replace("\\", "/")
-            vf += (
-                f",subtitles='{sub_fixed}':"
-                "force_style='"
-                f"FontName={Config.SUBTITLE_FONT},"
-                f"Fontsize={Config.SUBTITLE_FONTSIZE},"
-                "PrimaryColour=&Hffffff&,"
-                "OutlineColour=&H000000&,"
-                "BackColour=&H66000000&,"
-                "BorderStyle=3,"
-                "Outline=2,"
-                "Shadow=1,"
-                f"MarginV={Config.SUBTITLE_MARGIN_V},"
-                "Alignment=2'"
+        if self.auto_framer:
+            w, h = self._get_input_size()
+            vf = self.auto_framer.get_ffmpeg_vf(w, h, subtitle_path)
+        else:
+            vf = (
+                f"scale={Config.TARGET_WIDTH}:{Config.TARGET_HEIGHT}:"
+                "force_original_aspect_ratio=decrease,"
+                f"pad={Config.TARGET_WIDTH}:{Config.TARGET_HEIGHT}:"
+                "(ow-iw)/2:(oh-ih)/2"
             )
+
+            if subtitle_path:
+                sub_fixed = subtitle_path.replace("\\", "/")
+                vf += (
+                    f",subtitles='{sub_fixed}':"
+                    "force_style='"
+                    f"FontName={Config.SUBTITLE_FONT},"
+                    f"Fontsize={Config.SUBTITLE_FONTSIZE},"
+                    "PrimaryColour=&Hffffff&,"
+                    "OutlineColour=&H000000&,"
+                    "BackColour=&H66000000&,"
+                    "BorderStyle=3,"
+                    "Outline=2,"
+                    "Shadow=1,"
+                    f"MarginV={Config.SUBTITLE_MARGIN_V},"
+                    "Alignment=2'"
+                )
 
         cmd = ["ffmpeg", "-y"]
 
