@@ -53,8 +53,8 @@ class GamingEventDetector:
 
             return round(score, 4)
 
-        except Exception as e:
-            logger.error(f"OCR detection failed: {e}")
+        except (RuntimeError, ValueError) as e:
+            logger.warning(f"OCR detection failed: {e}")
             return 0.0
 
     def gaming_visual_score(self, frame, prev_frame=None):
