@@ -70,6 +70,32 @@ class BaseGameProfile:
     FACECAM_SPLIT_RATIO = 0.30  # top 30% for facecam
 
     # =========================================
+    # SMART TIMING (trigger-based clipping)
+    # =========================================
+    PRE_TRIGGER_PAD = 3.0       # seconds before trigger event
+    POST_TRIGGER_PAD = 2.5      # seconds after trigger (source time)
+    TRIGGER_CLIP_MIN = 6.0      # min output clip duration
+    TRIGGER_CLIP_MAX = 8.0      # max output clip duration
+
+    # =========================================
+    # POST-KILL EFFECTS
+    # =========================================
+    EFFECTS_ENABLED = False     # master switch for all effects
+
+    FLASH_ENABLED = False
+    FLASH_DURATION = 0.2        # seconds of contrast/saturation boost
+    FLASH_CONTRAST = 1.5
+    FLASH_SATURATION = 1.8
+
+    SLOWMO_ENABLED = False
+    SLOWMO_SPEED = 0.5          # playback speed (0.5 = half speed)
+    SLOWMO_DURATION = 1.5       # source seconds to slow down
+
+    SWOOSH_ENABLED = False
+    SWOOSH_DURATION = 0.5       # seconds
+    SWOOSH_VOLUME = 0.2
+
+    # =========================================
     # PEAK DETECTION
     # =========================================
     AUDIO_PEAK_WEIGHT = 0.55
@@ -112,4 +138,23 @@ class BaseGameProfile:
             "mode": self.FRAMING_MODE,
             "facecam_position": self.FACECAM_POSITION,
             "facecam_split_ratio": self.FACECAM_SPLIT_RATIO,
+        }
+
+    def get_effects_config(self):
+        return {
+            "enabled": self.EFFECTS_ENABLED,
+            "flash_enabled": self.FLASH_ENABLED,
+            "flash_duration": self.FLASH_DURATION,
+            "flash_contrast": self.FLASH_CONTRAST,
+            "flash_saturation": self.FLASH_SATURATION,
+            "slowmo_enabled": self.SLOWMO_ENABLED,
+            "slowmo_speed": self.SLOWMO_SPEED,
+            "slowmo_duration": self.SLOWMO_DURATION,
+            "swoosh_enabled": self.SWOOSH_ENABLED,
+            "swoosh_duration": self.SWOOSH_DURATION,
+            "swoosh_volume": self.SWOOSH_VOLUME,
+            "pre_trigger_pad": self.PRE_TRIGGER_PAD,
+            "post_trigger_pad": self.POST_TRIGGER_PAD,
+            "trigger_clip_min": self.TRIGGER_CLIP_MIN,
+            "trigger_clip_max": self.TRIGGER_CLIP_MAX,
         }
