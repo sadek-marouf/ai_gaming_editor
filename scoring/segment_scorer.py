@@ -102,6 +102,40 @@ class SegmentScorer:
                     )
 
             # =========================================
+            # TRIGGER TIMESTAMPS
+            # Track exact seconds where events fire
+            # =========================================
+            triggers = []
+
+            if kill_feed_scores:
+                for sec in range(s, min(e, len(kill_feed_scores))):
+                    if kill_feed_scores[sec] > 0:
+                        triggers.append({
+                            "time": sec,
+                            "type": "kill_feed",
+                            "strength": float(kill_feed_scores[sec]),
+                        })
+
+            if hitmarker_scores:
+                for sec in range(s, min(e, len(hitmarker_scores))):
+                    if hitmarker_scores[sec] > 0.5:
+                        triggers.append({
+                            "time": sec,
+                            "type": "hitmarker",
+                            "strength": float(hitmarker_scores[sec]),
+                        })
+
+            for peak in gaming_peaks:
+                if s <= peak["time"] <= e and peak["strength"] > 0.8:
+                    triggers.append({
+                        "time": peak["time"],
+                        "type": "peak",
+                        "strength": float(peak["strength"]),
+                    })
+
+            triggers.sort(key=lambda t: t["time"])
+
+            # =========================================
             # KILL FEED INSTANT BOOST
             # If kill feed detected, this segment is combat
             # =========================================
@@ -163,6 +197,7 @@ class SegmentScorer:
                 "kill_feed": round(kf, 3),
                 "hitmarker": round(hm, 3),
                 "vehicle_penalty": round(vehicle_mult, 3),
+                "triggers": triggers,
             })
 
         results.sort(key=lambda x: x["score"], reverse=True)

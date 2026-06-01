@@ -51,7 +51,21 @@ class FFmpegManager:
         run_cmd(cmd, check=True)
         logger.info(f"Audio extracted to {audio_path}")
 
-    def cut_clip(self, start, duration, output_path, subtitle_path=None):
+    def cut_clip(
+        self, start, duration, output_path,
+        subtitle_path=None, trigger_offset=None, effects_engine=None,
+    ):
+        # Route to effects pipeline if trigger present
+        if (
+            trigger_offset is not None
+            and effects_engine is not None
+            and effects_engine.has_effects()
+        ):
+            return self._cut_clip_with_effects(
+                start, duration, output_path,
+                subtitle_path, trigger_offset, effects_engine,
+            )
+
         bitrate = Config.QUALITY_PRESETS.get(self.quality, "5000k")
 
         if self.auto_framer:
@@ -103,6 +117,56 @@ class FFmpegManager:
 
         run_cmd(cmd, check=True)
         logger.info(f"Clip generated: {output_path}")
+
+    def _cut_clip_with_effects(
+        self, start, duration, output_path,
+        subtitle_path, trigger_offset, effects_engine,
+    ):
+        """Cut clip with post-kill effects via filter_complex."""
+        bitrate = Config.QUALITY_PRESETS.get(self.quality, "5000k")
+
+        # Get base crop/scale VF without subtitles
+        if self.auto_framer:
+            w, h = self._get_input_size()
+            base_vf = self.auto_framer.get_ffmpeg_vf(w, h, None)
+        else:
+            base_vf = (
+                f"scale={Config.TARGET_WIDTH}:{Config.TARGET_HEIGHT}:"
+                "force_original_aspect_ratio=decrease,"
+                f"pad={Config.TARGET_WIDTH}:{Config.TARGET_HEIGHT}:"
+                "(ow-iw)/2:(oh-ih)/2"
+            )
+
+        fc, vlabel, alabel, out_dur = effects_engine.build_filter_complex(
+            base_vf, trigger_offset, duration, subtitle_path,
+        )
+
+        cmd = ["ffmpeg", "-y"]
+
+        if self.use_gpu:
+            cmd += ["-hwaccel", "cuda"]
+
+        cmd += [
+            "-ss", str(start),
+            "-t", str(duration),
+            "-i", self.video_path,
+            "-filter_complex", fc,
+            "-map", vlabel,
+            "-map", alabel,
+            "-c:v", self.codec,
+            "-preset", "fast",
+            "-b:v", bitrate,
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            output_path,
+        ]
+
+        run_cmd(cmd, check=True)
+        logger.info(
+            f"Effects clip generated: {output_path} "
+            f"(trigger@{trigger_offset:.1f}s, out={out_dur:.1f}s)"
+        )
 
     def concat_clips(self, clip_paths, output_path):
         concat_file = os.path.join(self.output_dir, "concat.txt")

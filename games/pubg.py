@@ -104,6 +104,34 @@ class PUBGProfile(BaseGameProfile):
     FACECAM_SPLIT_RATIO = 0.30
 
     # =========================================
+    # SMART TIMING
+    # 3s build-up before kill, 2.5s aftermath
+    # =========================================
+    PRE_TRIGGER_PAD = 3.0
+    POST_TRIGGER_PAD = 2.5
+    TRIGGER_CLIP_MIN = 6.0
+    TRIGGER_CLIP_MAX = 8.0
+
+    # =========================================
+    # POST-KILL EFFECTS
+    # Flash, slow-mo, swoosh for cinematic reels
+    # =========================================
+    EFFECTS_ENABLED = True
+
+    FLASH_ENABLED = True
+    FLASH_DURATION = 0.2
+    FLASH_CONTRAST = 1.5
+    FLASH_SATURATION = 1.8
+
+    SLOWMO_ENABLED = True
+    SLOWMO_SPEED = 0.5
+    SLOWMO_DURATION = 1.5
+
+    SWOOSH_ENABLED = True
+    SWOOSH_DURATION = 0.5
+    SWOOSH_VOLUME = 0.2
+
+    # =========================================
     # PEAK DETECTION
     # More audio, less motion for PUBG
     # =========================================

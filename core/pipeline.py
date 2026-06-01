@@ -406,7 +406,9 @@ class Pipeline:
             # =====================================================
             logger.info("[10/10] Generating reel...")
 
-            reel_gen = ReelGenerator(self.ffmpeg, self.temp_dir)
+            reel_gen = ReelGenerator(
+                self.ffmpeg, self.temp_dir, self.game_profile,
+            )
             reel = reel_gen.generate(best, self.reels_dir)
 
             elapsed = round(time.time() - total_start, 2)
