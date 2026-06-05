@@ -87,10 +87,6 @@ class BaseGameProfile:
     FLASH_CONTRAST = 1.5
     FLASH_SATURATION = 1.8
 
-    SLOWMO_ENABLED = False
-    SLOWMO_SPEED = 0.5          # playback speed (0.5 = half speed)
-    SLOWMO_DURATION = 1.5       # source seconds to slow down
-
     SWOOSH_ENABLED = False
     SWOOSH_DURATION = 0.5       # seconds
     SWOOSH_VOLUME = 0.2
@@ -147,9 +143,6 @@ class BaseGameProfile:
             "flash_duration": self.FLASH_DURATION,
             "flash_contrast": self.FLASH_CONTRAST,
             "flash_saturation": self.FLASH_SATURATION,
-            "slowmo_enabled": self.SLOWMO_ENABLED,
-            "slowmo_speed": self.SLOWMO_SPEED,
-            "slowmo_duration": self.SLOWMO_DURATION,
             "swoosh_enabled": self.SWOOSH_ENABLED,
             "swoosh_duration": self.SWOOSH_DURATION,
             "swoosh_volume": self.SWOOSH_VOLUME,

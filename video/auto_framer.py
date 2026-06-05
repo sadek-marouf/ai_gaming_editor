@@ -20,6 +20,7 @@ class AutoFramer:
 
     TARGET_W = Config.TARGET_WIDTH   # 720
     TARGET_H = Config.TARGET_HEIGHT  # 1280
+    PRESERVE_NATIVE = Config.PRESERVE_NATIVE_RESOLUTION
 
     def __init__(self, game_profile):
         self.profile = game_profile
@@ -71,10 +72,17 @@ class AutoFramer:
             crop_x = "0"
             crop_y = f"(ih-{crop_h})/2"
 
-        vf = (
-            f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
-            f"scale={self.TARGET_W}:{self.TARGET_H}"
-        )
+        if self.PRESERVE_NATIVE:
+            # Crop only — no rescale for lossless quality
+            # Ensure even dimensions for codec compatibility
+            crop_w = crop_w if crop_w % 2 == 0 else crop_w - 1
+            crop_h = crop_h if crop_h % 2 == 0 else crop_h - 1
+            vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"
+        else:
+            vf = (
+                f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+                f"scale={self.TARGET_W}:{self.TARGET_H}"
+            )
 
         if subtitle_path:
             vf += self._subtitle_filter(subtitle_path)
@@ -95,10 +103,15 @@ class AutoFramer:
         crop_x = f"(iw-{crop_w})/2"
         crop_y = "0"
 
-        vf = (
-            f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
-            f"scale={self.TARGET_W}:{self.TARGET_H}"
-        )
+        if self.PRESERVE_NATIVE:
+            crop_w = crop_w if crop_w % 2 == 0 else crop_w - 1
+            crop_h = crop_h if crop_h % 2 == 0 else crop_h - 1
+            vf = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"
+        else:
+            vf = (
+                f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y},"
+                f"scale={self.TARGET_W}:{self.TARGET_H}"
+            )
 
         if subtitle_path:
             vf += self._subtitle_filter(subtitle_path)

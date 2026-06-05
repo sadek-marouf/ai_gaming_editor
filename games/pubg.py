@@ -114,7 +114,8 @@ class PUBGProfile(BaseGameProfile):
 
     # =========================================
     # POST-KILL EFFECTS
-    # Flash, slow-mo, swoosh for cinematic reels
+    # Flash + swoosh for cinematic reels
+    # No slow-mo: preserve native playback speed
     # =========================================
     EFFECTS_ENABLED = True
 
@@ -122,10 +123,6 @@ class PUBGProfile(BaseGameProfile):
     FLASH_DURATION = 0.2
     FLASH_CONTRAST = 1.5
     FLASH_SATURATION = 1.8
-
-    SLOWMO_ENABLED = True
-    SLOWMO_SPEED = 0.5
-    SLOWMO_DURATION = 1.5
 
     SWOOSH_ENABLED = True
     SWOOSH_DURATION = 0.5

@@ -127,54 +127,29 @@ class ReelGenerator:
     def _compute_trigger_timing(self, seg, primary):
         """Smart padding: 3s before trigger, 2-3s after.
 
+        No slow-mo expansion — output duration = source duration.
         Returns (start, source_duration, trigger_offset_in_clip).
         """
         pre_pad = self.effects_config.get("pre_trigger_pad", 3.0)
         post_pad = self.effects_config.get("post_trigger_pad", 2.5)
         clip_min = self.effects_config.get("trigger_clip_min", 6.0)
         clip_max = self.effects_config.get("trigger_clip_max", 8.0)
-        slowmo_enabled = self.effects_config.get("slowmo_enabled", False)
-        slowmo_dur = self.effects_config.get("slowmo_duration", 1.5)
-        slowmo_speed = self.effects_config.get("slowmo_speed", 0.5)
 
         trigger_time = primary["time"]
 
-        # Clip start: 3s before trigger, clamped to 0
         start = max(0, trigger_time - pre_pad)
-
-        # Source end: trigger + post_pad
         source_end = trigger_time + post_pad
-
-        # Clamp source duration to target range
         source_dur = source_end - start
 
-        # If slowmo is enabled, the output is longer than source.
-        # Slowmo adds (slowmo_dur / slowmo_speed - slowmo_dur) extra seconds.
-        # Target output 6-8s → adjust source_dur down to compensate.
-        if slowmo_enabled and slowmo_dur > 0:
-            slowmo_extra = slowmo_dur * (1.0 / slowmo_speed - 1.0)
-        else:
-            slowmo_extra = 0.0
-
-        # Expected output = source_dur + slowmo_extra
-        expected_output = source_dur + slowmo_extra
-
-        # If too short, extend post_pad
-        if expected_output < clip_min:
-            needed = clip_min - expected_output
-            source_end += needed
-            source_dur = source_end - start
-            expected_output = source_dur + slowmo_extra
-
-        # If too long, trim post section
-        if expected_output > clip_max:
-            excess = expected_output - clip_max
-            source_end -= excess
+        if source_dur < clip_min:
+            source_end += clip_min - source_dur
             source_dur = source_end - start
 
-        # Safety: ensure minimum source duration
+        if source_dur > clip_max:
+            source_end -= source_dur - clip_max
+            source_dur = source_end - start
+
         source_dur = max(source_dur, 3.0)
-
         trigger_offset = trigger_time - start
 
         logger.info(

@@ -267,6 +267,229 @@ class Pipeline:
             logger.info(f"Facecam auto-detected: {detected}")
 
     # =====================================================
+    # TRANSCRIPTION → RAW TEXT
+    # =====================================================
+
+    def _get_transcription_text(self, segments):
+        """Extract flat text from transcription segments."""
+        texts = []
+        for seg in segments:
+            text = seg.get("text", "").replace("\\N", " ")
+            if text.strip():
+                texts.append(text.strip())
+        return " ".join(texts)
+
+    # =====================================================
+    # GEMINI AI DIRECTOR PIPELINE
+    # =====================================================
+
+    def _run_gemini_pipeline(self, segments):
+        """Phase 2-5: Gemini-driven highlight selection and rendering.
+
+        1. Call Gemini AI Director with full video + transcription
+        2. Slice original video at returned timestamps
+        3. Apply micro-effects (flash/swoosh) within regions
+        4. Render premium lossless output
+        """
+        from core.ai_director import analyze_gaming_video_context
+        from video.effects_engine import EffectsEngine
+
+        transcription_text = self._get_transcription_text(segments)
+
+        # Phase 2: Gemini multimodal analysis
+        logger.info("[GEMINI] Phase 2: AI video understanding...")
+        result = analyze_gaming_video_context(
+            self.video_path, transcription_text,
+        )
+
+        highlights = result.get("highlights", [])
+        if not highlights:
+            logger.warning("Gemini returned no highlights")
+            return None
+
+        # Sort by start time
+        highlights.sort(key=lambda h: h["start"])
+
+        # Save analysis
+        json_path = os.path.join(self.output_dir, "gemini_highlights.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"Gemini found {len(highlights)} highlights")
+
+        # Phase 3: Precision trimming
+        logger.info("[GEMINI] Phase 3: Precision trimming...")
+
+        effects_engine = EffectsEngine(self.game_profile)
+        has_effects = effects_engine.has_effects()
+
+        temp_clips = []
+        for idx, highlight in enumerate(highlights):
+            start = highlight["start"]
+            end = highlight["end"]
+            duration = end - start
+
+            if duration < 2:
+                logger.warning(f"Highlight {idx} too short ({duration}s), skipping")
+                continue
+
+            out_path = os.path.join(self.temp_dir, f"gemini_clip_{idx}.mp4")
+
+            # Phase 4: Micro-effects within pre-selected regions
+            if has_effects:
+                # Trigger offset = midpoint of clip (best guess for kill moment)
+                trigger_offset = duration / 2.0
+
+                self.ffmpeg.cut_clip(
+                    start, duration, out_path,
+                    subtitle_path=None,
+                    trigger_offset=trigger_offset,
+                    effects_engine=effects_engine,
+                )
+            else:
+                self.ffmpeg.cut_clip_direct(start, end, out_path)
+
+            temp_clips.append((idx, out_path))
+            logger.info(
+                f"  Clip {idx}: [{start}s - {end}s] "
+                f"{highlight.get('reason', '')}"
+            )
+
+        if not temp_clips:
+            logger.error("No clips generated from Gemini highlights")
+            return None
+
+        # Phase 5: Render final reel
+        logger.info("[GEMINI] Phase 5: Rendering premium output...")
+
+        temp_clips.sort(key=lambda x: x[0])
+        clip_paths = [path for _, path in temp_clips]
+
+        final_out = os.path.join(self.reels_dir, "viral_reel.mp4")
+        self.ffmpeg.concat_clips(clip_paths, final_out)
+
+        return final_out
+
+    # =====================================================
+    # LEGACY FRAME-BY-FRAME PIPELINE
+    # =====================================================
+
+    def _run_legacy_pipeline(self, segments):
+        """Original algorithmic pipeline (fallback when Gemini unavailable)."""
+
+        # STEP 3: LOAD SHARED FRAMES
+        logger.info("[LEGACY 3/10] Loading shared frames...")
+        self.frame_manager.load_frames()
+
+        # STEP 4: FACECAM AUTO-DETECT
+        logger.info("[LEGACY 4/10] Detecting facecam...")
+        self._detect_facecam()
+
+        # STEP 5-8: PARALLEL ANALYSIS
+        logger.info("[LEGACY 5-8/10] Running parallel analysis...")
+
+        executor = ThreadPoolExecutor(
+            max_workers=self.workers
+        )
+
+        futures = {
+            executor.submit(
+                self.audio_engine.compute_energy
+            ): "audio_energy",
+            executor.submit(
+                self._compute_motion_scores
+            ): "motion",
+            executor.submit(
+                self._compute_visual_scores
+            ): "visual",
+            executor.submit(
+                self._compute_face_scores
+            ): "faces",
+            executor.submit(
+                SceneDetector(
+                    self.video_path,
+                    cache_dir=self.output_dir,
+                ).detect
+            ): "scenes",
+            executor.submit(
+                self._compute_kill_feed_scores
+            ): "kill_feed",
+            executor.submit(
+                self._compute_hitmarker_scores
+            ): "hitmarker",
+            executor.submit(
+                self._compute_vehicle_penalties
+            ): "vehicle",
+        }
+
+        results = {}
+
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+                logger.info(f"  {key} completed")
+            except Exception as e:
+                logger.error(f"  {key} failed: {e}")
+                results[key] = []
+
+        executor.shutdown(wait=False)
+
+        audio_scores = results.get("audio_energy", [])
+        motion_scores = results.get("motion", [])
+        visual_scores = results.get("visual", [])
+        face_scores = results.get("faces", [])
+        scenes = results.get("scenes", [])
+        kill_feed_scores = results.get("kill_feed", [])
+        hitmarker_scores = results.get("hitmarker", [])
+        vehicle_penalties = results.get("vehicle", [])
+
+        # STEP 9: GAMING PEAKS + SCORING
+        logger.info("[LEGACY 9/10] Scoring segments...")
+
+        gaming_peaks = self._detect_gaming_peaks(
+            audio_scores, motion_scores,
+        )
+
+        scored = self.scorer.score_segments(
+            segments,
+            audio_scores,
+            motion_scores,
+            visual_scores,
+            face_scores,
+            scenes,
+            gaming_peaks,
+            kill_feed_scores=kill_feed_scores,
+            hitmarker_scores=hitmarker_scores,
+            vehicle_penalties=vehicle_penalties,
+        )
+
+        best = self.ranker.rank(scored)
+        best.sort(key=lambda x: x["start"])
+
+        # Save analysis
+        json_path = os.path.join(self.output_dir, "segments.json")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(best, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"Found {len(best)} best segments")
+        for i, seg in enumerate(best, 1):
+            logger.info(
+                f"  {i}. {seg['text'][:50]}... "
+                f"(score: {seg['score']:.3f})"
+            )
+
+        # STEP 10: GENERATE REEL
+        logger.info("[LEGACY 10/10] Generating reel...")
+
+        reel_gen = ReelGenerator(
+            self.ffmpeg, self.temp_dir, self.game_profile,
+        )
+        reel = reel_gen.generate(best, self.reels_dir)
+
+        return reel
+
+    # =====================================================
     # RUN PIPELINE
     # =====================================================
 
@@ -275,141 +498,44 @@ class Pipeline:
 
         try:
             # =====================================================
-            # STEP 1: EXTRACT AUDIO
+            # PHASE 1: EXTRACT AUDIO + TRANSCRIBE
             # =====================================================
-            logger.info("[1/10] Extracting audio...")
+            logger.info("[1/5] Extracting audio...")
             self.ffmpeg.extract_audio(self.audio_path)
             self.audio_engine.load_audio(self.audio_path)
 
-            # =====================================================
-            # STEP 2: TRANSCRIBE
-            # =====================================================
-            logger.info("[2/10] Transcribing audio...")
+            logger.info("[2/5] Transcribing audio (WhisperX)...")
             segments = self.transcriber.transcribe(self.audio_path)
 
             if not segments:
-                logger.error("No segments transcribed")
-                return None
+                logger.warning("No segments transcribed")
 
             # =====================================================
-            # STEP 3: LOAD SHARED FRAMES
+            # PHASE 2-5: GEMINI OR LEGACY
             # =====================================================
-            logger.info("[3/10] Loading shared frames...")
-            self.frame_manager.load_frames()
+            from core.ai_director import is_gemini_available
 
-            # =====================================================
-            # STEP 4: FACECAM AUTO-DETECT
-            # =====================================================
-            logger.info("[4/10] Detecting facecam...")
-            self._detect_facecam()
-
-            # =====================================================
-            # STEP 5-8: PARALLEL ANALYSIS
-            # =====================================================
-            logger.info("[5-8/10] Running parallel analysis...")
-
-            executor = ThreadPoolExecutor(
-                max_workers=self.workers
-            )
-
-            futures = {
-                executor.submit(
-                    self.audio_engine.compute_energy
-                ): "audio_energy",
-                executor.submit(
-                    self._compute_motion_scores
-                ): "motion",
-                executor.submit(
-                    self._compute_visual_scores
-                ): "visual",
-                executor.submit(
-                    self._compute_face_scores
-                ): "faces",
-                executor.submit(
-                    SceneDetector(
-                        self.video_path,
-                        cache_dir=self.output_dir,
-                    ).detect
-                ): "scenes",
-                executor.submit(
-                    self._compute_kill_feed_scores
-                ): "kill_feed",
-                executor.submit(
-                    self._compute_hitmarker_scores
-                ): "hitmarker",
-                executor.submit(
-                    self._compute_vehicle_penalties
-                ): "vehicle",
-            }
-
-            results = {}
-
-            for future in as_completed(futures):
-                key = futures[future]
-                try:
-                    results[key] = future.result()
-                    logger.info(f"  {key} completed")
-                except Exception as e:
-                    logger.error(f"  {key} failed: {e}")
-                    results[key] = []
-
-            executor.shutdown(wait=False)
-
-            audio_scores = results.get("audio_energy", [])
-            motion_scores = results.get("motion", [])
-            visual_scores = results.get("visual", [])
-            face_scores = results.get("faces", [])
-            scenes = results.get("scenes", [])
-            kill_feed_scores = results.get("kill_feed", [])
-            hitmarker_scores = results.get("hitmarker", [])
-            vehicle_penalties = results.get("vehicle", [])
-
-            # =====================================================
-            # STEP 9: GAMING PEAKS + SCORING
-            # =====================================================
-            logger.info("[9/10] Scoring segments...")
-
-            gaming_peaks = self._detect_gaming_peaks(
-                audio_scores, motion_scores,
-            )
-
-            scored = self.scorer.score_segments(
-                segments,
-                audio_scores,
-                motion_scores,
-                visual_scores,
-                face_scores,
-                scenes,
-                gaming_peaks,
-                kill_feed_scores=kill_feed_scores,
-                hitmarker_scores=hitmarker_scores,
-                vehicle_penalties=vehicle_penalties,
-            )
-
-            best = self.ranker.rank(scored)
-            best.sort(key=lambda x: x["start"])
-
-            # Save analysis
-            json_path = os.path.join(self.output_dir, "segments.json")
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(best, f, ensure_ascii=False, indent=2)
-
-            logger.info(f"Found {len(best)} best segments")
-            for i, seg in enumerate(best, 1):
+            if Config.USE_GEMINI and is_gemini_available():
                 logger.info(
-                    f"  {i}. {seg['text'][:50]}... "
-                    f"(score: {seg['score']:.3f})"
+                    "[3/5] Using Gemini AI Director "
+                    f"({Config.GEMINI_MODEL})..."
                 )
+                reel = self._run_gemini_pipeline(segments)
 
-            # =====================================================
-            # STEP 10: GENERATE REEL
-            # =====================================================
-            logger.info("[10/10] Generating reel...")
-
-            reel_gen = ReelGenerator(
-                self.ffmpeg, self.temp_dir, self.game_profile,
-            )
-            reel = reel_gen.generate(best, self.reels_dir)
+                if reel is None:
+                    logger.warning(
+                        "Gemini pipeline returned no results, "
+                        "falling back to legacy..."
+                    )
+                    reel = self._run_legacy_pipeline(segments)
+            else:
+                if Config.USE_GEMINI:
+                    logger.warning(
+                        "Gemini enabled but unavailable "
+                        "(missing SDK or API key). "
+                        "Falling back to legacy pipeline."
+                    )
+                reel = self._run_legacy_pipeline(segments)
 
             elapsed = round(time.time() - total_start, 2)
             logger.info(f"FINAL REEL: {reel}")

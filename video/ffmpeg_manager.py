@@ -1,12 +1,14 @@
 # video/ffmpeg_manager.py
 
 import os
+import json
+import subprocess
 
 import cv2
 
 from core.logger import get_logger
 from core.config import Config
-from core.utils import run_cmd, get_best_codec
+from core.utils import run_cmd, get_best_codec, get_codec_args
 
 logger = get_logger("FFMPEG")
 
@@ -23,20 +25,41 @@ class FFmpegManager:
         self.use_gpu = use_gpu
         self.codec = get_best_codec(use_gpu)
         self.auto_framer = auto_framer
-        self._input_size = None
+        self._input_info = None
 
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def _get_input_size(self):
-        if self._input_size is not None:
-            return self._input_size
+    def _get_input_info(self):
+        """Get source video width, height, fps."""
+        if self._input_info is not None:
+            return self._input_info
 
         cap = cv2.VideoCapture(self.video_path)
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
         cap.release()
-        self._input_size = (w, h)
-        return self._input_size
+
+        if fps <= 0:
+            fps = 30.0
+
+        self._input_info = {"width": w, "height": h, "fps": fps}
+        return self._input_info
+
+    def _get_input_size(self):
+        """Backward-compatible: return (width, height)."""
+        info = self._get_input_info()
+        return (info["width"], info["height"])
+
+    def _get_codec_args(self):
+        """Premium quality encoder arguments."""
+        return get_codec_args(self.codec, self.use_gpu)
+
+    def _get_audio_args(self, has_audio_effects=False):
+        """Audio arguments: copy when possible, re-encode if effects modify audio."""
+        if has_audio_effects:
+            return ["-c:a", "aac", "-b:a", "192k"]
+        return ["-c:a", "copy"]
 
     def extract_audio(self, audio_path):
         cmd = [
@@ -66,10 +89,10 @@ class FFmpegManager:
                 subtitle_path, trigger_offset, effects_engine,
             )
 
-        bitrate = Config.QUALITY_PRESETS.get(self.quality, "5000k")
+        info = self._get_input_info()
 
         if self.auto_framer:
-            w, h = self._get_input_size()
+            w, h = info["width"], info["height"]
             vf = self.auto_framer.get_ffmpeg_vf(w, h, subtitle_path)
         else:
             vf = (
@@ -106,14 +129,12 @@ class FFmpegManager:
             "-t", str(duration),
             "-i", self.video_path,
             "-vf", vf,
-            "-c:v", self.codec,
-            "-preset", "fast",
-            "-b:v", bitrate,
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            output_path,
+            "-r", str(info["fps"]),
         ]
+
+        cmd += self._get_codec_args()
+        cmd += self._get_audio_args(has_audio_effects=False)
+        cmd += ["-movflags", "+faststart", output_path]
 
         run_cmd(cmd, check=True)
         logger.info(f"Clip generated: {output_path}")
@@ -123,11 +144,11 @@ class FFmpegManager:
         subtitle_path, trigger_offset, effects_engine,
     ):
         """Cut clip with post-kill effects via filter_complex."""
-        bitrate = Config.QUALITY_PRESETS.get(self.quality, "5000k")
+        info = self._get_input_info()
 
         # Get base crop/scale VF without subtitles
         if self.auto_framer:
-            w, h = self._get_input_size()
+            w, h = info["width"], info["height"]
             base_vf = self.auto_framer.get_ffmpeg_vf(w, h, None)
         else:
             base_vf = (
@@ -141,6 +162,9 @@ class FFmpegManager:
             base_vf, trigger_offset, duration, subtitle_path,
         )
 
+        # Effects that modify audio (swoosh) require re-encoding
+        has_audio_fx = alabel != "[amain]"
+
         cmd = ["ffmpeg", "-y"]
 
         if self.use_gpu:
@@ -153,19 +177,57 @@ class FFmpegManager:
             "-filter_complex", fc,
             "-map", vlabel,
             "-map", alabel,
-            "-c:v", self.codec,
-            "-preset", "fast",
-            "-b:v", bitrate,
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            output_path,
+            "-r", str(info["fps"]),
         ]
+
+        cmd += self._get_codec_args()
+        cmd += self._get_audio_args(has_audio_effects=has_audio_fx)
+        cmd += ["-movflags", "+faststart", output_path]
 
         run_cmd(cmd, check=True)
         logger.info(
             f"Effects clip generated: {output_path} "
             f"(trigger@{trigger_offset:.1f}s, out={out_dur:.1f}s)"
+        )
+
+    def cut_clip_direct(self, start, end, output_path):
+        """Precision trim from source with premium quality.
+
+        Used by Gemini AI Director pipeline for lossless slicing.
+        Audio is copied without re-encoding.
+        """
+        info = self._get_input_info()
+        duration = end - start
+
+        if self.auto_framer:
+            w, h = info["width"], info["height"]
+            vf = self.auto_framer.get_ffmpeg_vf(w, h, None)
+        else:
+            vf = None
+
+        cmd = ["ffmpeg", "-y"]
+
+        if self.use_gpu:
+            cmd += ["-hwaccel", "cuda"]
+
+        cmd += [
+            "-ss", str(start),
+            "-t", str(duration),
+            "-i", self.video_path,
+        ]
+
+        if vf:
+            cmd += ["-vf", vf]
+
+        cmd += ["-r", str(info["fps"])]
+        cmd += self._get_codec_args()
+        cmd += self._get_audio_args(has_audio_effects=False)
+        cmd += ["-movflags", "+faststart", output_path]
+
+        run_cmd(cmd, check=True)
+        logger.info(
+            f"Direct clip: {output_path} "
+            f"[{start:.1f}-{end:.1f}]"
         )
 
     def concat_clips(self, clip_paths, output_path):

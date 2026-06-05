@@ -6,6 +6,7 @@ import argparse
 import logging
 
 from core.pipeline import Pipeline
+from core.config import Config
 from games.registry import list_games
 
 
@@ -36,8 +37,8 @@ def main():
     parser.add_argument(
         "--quality",
         choices=["low", "medium", "high"],
-        default="medium",
-        help="Output quality (default: medium)",
+        default="high",
+        help="Output quality (default: high)",
     )
 
     parser.add_argument(
@@ -51,6 +52,18 @@ def main():
         "--game",
         default="generic",
         help=f"Game profile to use. Available: {game_list}",
+    )
+
+    parser.add_argument(
+        "--no-gemini",
+        action="store_true",
+        help="Disable Gemini AI Director (use legacy frame-by-frame pipeline)",
+    )
+
+    parser.add_argument(
+        "--gemini-model",
+        default=None,
+        help=f"Gemini model name (default: {Config.GEMINI_MODEL})",
     )
 
     parser.add_argument(
@@ -72,6 +85,12 @@ def main():
         logging.error(f"Video file not found: {args.video}")
         sys.exit(1)
 
+    if args.no_gemini:
+        Config.USE_GEMINI = False
+
+    if args.gemini_model:
+        Config.GEMINI_MODEL = args.gemini_model
+
     pipeline = Pipeline(
         args.video,
         output_dir=args.out,
@@ -87,6 +106,7 @@ def main():
         print(f"SUCCESS: Reel generated")
         print(f"Location: {result}")
         print(f"Game profile: {args.game}")
+        print(f"Pipeline: {'Gemini AI' if Config.USE_GEMINI else 'Legacy'}")
         print(f"{'=' * 60}")
     else:
         print(f"\n{'=' * 60}")

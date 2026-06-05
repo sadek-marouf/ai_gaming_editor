@@ -29,7 +29,20 @@ class Config:
         "high": "8000k",
     }
 
-    DEFAULT_QUALITY = "medium"
+    DEFAULT_QUALITY = "high"
+
+    # Premium NVENC encoding (GPU)
+    NVENC_CODEC = "hevc_nvenc"
+    NVENC_PRESET = "p7"
+    NVENC_QP = 18
+
+    # CPU fallback encoding
+    CPU_CODEC = "libx264"
+    CPU_CRF = 18
+    CPU_PRESET = "slow"
+
+    # Preserve native resolution / fps from source
+    PRESERVE_NATIVE_RESOLUTION = True
 
     # =========================
     # AUDIO
@@ -68,11 +81,17 @@ class Config:
     SUBTITLE_MARGIN_V = 60
 
     # =========================
-    # AI SETTINGS
+    # AI SETTINGS (Groq - legacy fallback)
     # =========================
     USE_AI = False
     AI_MODEL = "llama-3.1-8b-instant"
     AI_BASE_URL = "https://api.groq.com/openai/v1"
+
+    # =========================
+    # GEMINI AI DIRECTOR
+    # =========================
+    USE_GEMINI = True
+    GEMINI_MODEL = "gemini-1.5-flash"
 
     # =========================
     # GAMING PROFILE
